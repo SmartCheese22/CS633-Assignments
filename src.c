@@ -76,6 +76,12 @@ void rankToProcessCoord(int rank, int *process_x, int *process_y, int *process_z
     *process_z = rank / (PX * PY);
 }
 
+int CoordToRankProcess(int x, int y, int z) {
+    if(x < 0 || x >= PX || y < 0 || y >= PY || z < 0 || z >= PZ)
+        return MPI_PROC_NULL;
+    return x + y * PX + z * PX * PY;
+}
+
 // PROCESS: Convert linear index to rank
 int idxToRank(int i) {
     int x, y, z;
@@ -86,6 +92,139 @@ int idxToRank(int i) {
 // Function to compute 3D indices in local array with ghost cells
 int localIndex(int x, int y, int z, int t, int lnx, int lny, int lnz) {
     return (x + 1) + (y + 1) * lnx + (z + 1) * lnx * lny + t * lnx * lny * lnz;
+}
+
+// Function to determine if a point is a local minimum
+// Returns 1 if it's a local minimum, 0 otherwise
+int isLocalMinimum(float* local_data, int x, int y, int z, int t, int lnx, int lny, int lnz) {
+    float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
+    
+    // Check all 26 neighbors
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue; // Skip the point itself
+                
+                if (value > local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)]) {
+                    return 0; // Not a minimum
+                }
+            }
+        }
+    }
+    
+    return 1; // It's a local minimum
+}
+
+// Similarly for local maximum
+int isLocalMaximum(float* local_data, int x, int y, int z, int t, int lnx, int lny, int lnz) {
+    float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
+    
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+                
+                if (value < local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)]) {
+                    return 0; // Not a maximum
+                }
+            }
+        }
+    }
+    
+    return 1; // It's a local maximum
+}
+
+// Find local minima and maxima for a specific time step
+void findLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
+                      int local_nx, int local_ny, int local_nz,
+                      int *min_count, int *max_count, float *global_min, float *global_max)
+{
+    *min_count = 0;
+    *max_count = 0;
+    *global_min = FLT_MAX;
+    *global_max = -FLT_MAX;
+
+    for (int z = 1; z < local_nz - 1; z++){
+        for (int y = 1; y < local_ny - 1; y++){
+            for (int x = 1; x < local_nx - 1; x++){
+                float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
+                // Update global extrema
+                if (value < *global_min)
+                    *global_min = value;
+                if (value > *global_max)
+                    *global_max = value;
+
+                // Check for local extrema
+                if (isLocalMinimum(local_data, x, y, z, t, lnx, lny, lnz)){
+                    (*min_count)++;
+                }
+
+                if (isLocalMaximum(local_data, x, y, z, t, lnx, lny, lnz)){
+                    (*max_count)++;
+                }
+            }
+        }
+    }
+}
+
+void updateLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
+                      int local_nx, int local_ny, int local_nz,
+                      int *min_count, int *max_count, float *global_min, float *global_max)
+{
+
+    //doing only for edge cases
+    int dz[2] = {0, local_nz - 1};
+    int dy[2] = {0, local_ny - 1};
+    int dx[2] = {0, local_nx - 1};
+
+    for(int z = 0; z < 2; z++){
+        for(int y = 0; y < local_ny; y++){
+            for(int x = 0; x < local_nx; x++){
+                float value = local_data[localIndex(x, y, dz[z], t, lnx, lny, lnz)];
+                if(value < *global_min)
+                    *global_min = value;
+                if(value > *global_max)
+                    *global_max = value;
+                if(isLocalMinimum(local_data, x, y, dz[z], t, lnx, lny, lnz))
+                    (*min_count)++;
+                if(isLocalMaximum(local_data, x, y, dz[z], t, lnx, lny, lnz))
+                    (*max_count)++;
+            }
+        }
+    }
+
+    for(int y = 0; y < 2; y++){
+        for(int z = 0; z < local_nz; z++){
+            for(int x = 0; x < local_nx; x++){
+                float value = local_data[localIndex(x, dy[y], z, t, lnx, lny, lnz)];
+                if(value < *global_min)
+                    *global_min = value;
+                if(value > *global_max)
+                    *global_max = value;
+                if(isLocalMinimum(local_data, x, dy[y], z, t, lnx, lny, lnz))
+                    (*min_count)++;
+                if(isLocalMaximum(local_data, x, dy[y], z, t, lnx, lny, lnz))
+                    (*max_count)++;
+            }
+        }
+    }
+
+    for(int x = 0; x < 2; x++){
+        for(int y = 0; y < local_ny; y++){
+            for(int z = 0; z < local_nz; z++){
+                float value = local_data[localIndex(dx[x], y, z, t, lnx, lny, lnz)];
+                if(value < *global_min)
+                    *global_min = value;
+                if(value > *global_max)
+                    *global_max = value;
+                if(isLocalMinimum(local_data, dx[x], y, z, t, lnx, lny, lnz))
+                    (*min_count)++;
+                if(isLocalMaximum(local_data, dx[x], y, z, t, lnx, lny, lnz))
+                    (*max_count)++;
+            }
+        }
+    }
+
 }
 
 int main(int argc, char* argv[]){
@@ -179,10 +318,157 @@ int main(int argc, char* argv[]){
     
     if(!rank)
         free(global_data);
+    float* temp_data = (float *)malloc(local_data_size * sizeof(float));
+    memcpy(temp_data, local_data, local_data_size * sizeof(float));
+    memset(local_data, 0, local_data_array_size * sizeof(float));
+
+    int idx = 0;
+    for(int t = 0; t < NC; t++){
+        for(int z = 0; z < NZ; z++){
+            for(int y = 0; y < NY; y++){
+                for(int x = 0; x < NX; x++){
+                   local_data[localIndex(x, y, z, t, lnx, lny, lnz)] = temp_data[idx++];
+                }
+            }
+        }
+    }
+    free(temp_data);
+
+    /* Compute and Communicate for all the time steps */
     
+    int local_min_count = 0;
+    int local_max_count = 0;
+    float local_min = FLT_MAX;
+    float local_max = -FLT_MAX;
+
+    MPI_Datatype x_slice;
+    MPI_Type_vector(local_ny*local_nz, 1, lnx, MPI_FLOAT, &x_slice);
+    MPI_Type_commit(&x_slice);
     
+    MPI_Datatype y_slice;
+    MPI_Type_vector(local_nx, local_nx, lnx*lny, MPI_FLOAT, &y_slice);
+    MPI_Type_commit(&y_slice);
+
+    MPI_Datatype z_slice;
+    MPI_Type_vector(local_ny, local_nx, lnx, MPI_FLOAT, &z_slice);
+    MPI_Type_commit(&z_slice);
+
+    // Main computation loop for all time steps
+    int *local_min_counts = (int *)malloc(NC * sizeof(int));
+    int *local_max_counts = (int *)malloc(NC * sizeof(int));
+    float *local_global_mins = (float *)malloc(NC * sizeof(float));
+    float *local_global_maxs = (float *)malloc(NC * sizeof(float));
+
+    for(int t = 0; t < NC; t++){
+        int neighbours[6];
+        neighbours[0] = CoordToRankProcess(proc_x - 1, proc_y, proc_z);   // left
+        neighbours[1] = CoordToRankProcess(proc_x + 1, proc_y, proc_z);   // right
+        neighbours[2] = CoordToRankProcess(proc_x, proc_y - 1, proc_z);   // down
+        neighbours[3] = CoordToRankProcess(proc_x, proc_y + 1, proc_z);   // up
+        neighbours[4] = CoordToRankProcess(proc_x, proc_y, proc_z - 1);   // front
+        neighbours[5] = CoordToRankProcess(proc_x, proc_y, proc_z + 1);   // back
+
+        MPI_Request requests[12];
+        MPI_Status statuses[12];
+        int req_idx = 0;
+
+        // X-direction exchange (left-right)
+        // Send right edge, receive left ghost
+        MPI_Isend(&local_data[localIndex(local_nx - 1, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[1], 0, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(-1, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[0], 0, MPI_COMM_WORLD, &requests[req_idx++]);
+
+        // Send left edge, receive right ghost
+        MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[0], 1, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(local_nx, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[1], 1, MPI_COMM_WORLD, &requests[req_idx++]);
+
+        // Y-direction exchange (down-up)
+        // Send up edge, receive down ghost
+        MPI_Isend(&local_data[localIndex(0, local_ny-1, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[3], 2, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(0, -1, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[2], 2, MPI_COMM_WORLD, &requests[req_idx++]);
+    
+        // Send down edge, receive up ghost
+        MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[2], 3, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(0, local_ny, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[3], 3, MPI_COMM_WORLD, &requests[req_idx++]);
+
+        // Z-direction exchange (back-front)
+        // Send front edge, receive back ghost
+        MPI_Isend(&local_data[localIndex(0, 0, local_nz-1, t, lnx, lny, lnz)], 1, z_slice, neighbours[5], 4, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(0, 0, -1, t, lnx, lny, lnz)], 1, z_slice, neighbours[4], 4, MPI_COMM_WORLD, &requests[req_idx++]);
+    
+        // Send back edge, receive front ghost
+        MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, z_slice, neighbours[4], 5, MPI_COMM_WORLD, &requests[req_idx++]);
+        MPI_Irecv(&local_data[localIndex(0, 0, local_nz, t, lnx, lny, lnz)], 1, z_slice, neighbours[5], 5, MPI_COMM_WORLD, &requests[req_idx++]);
+
+        //overlap the communication and computation
+        
+        findLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz,
+            &local_min_counts[t], &local_max_counts[t], 
+            &local_global_mins[t], &local_global_maxs[t]);
+        // Wait for all exchanges to complete
+        MPI_Waitall(req_idx, requests, statuses);
+
+        updateLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz,
+            &local_min_counts[t], &local_max_counts[t], 
+            &local_global_mins[t], &local_global_maxs[t]);
+
+    }
+
+    int *global_min_counts = NULL;
+    int *global_max_counts = NULL;
+    float *global_mins = NULL;
+    float *global_maxs = NULL;
+
+    if (rank == 0) {
+        global_min_counts = (int*)malloc(NC * sizeof(int));
+        global_max_counts = (int*)malloc(NC * sizeof(int));
+        global_mins = (float*)malloc(NC * sizeof(float));
+        global_maxs = (float*)malloc(NC * sizeof(float));
+    }
+
+    // Reduce min/max counts
+    MPI_Reduce(local_min_counts, global_min_counts, NC, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(local_max_counts, global_max_counts, NC, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    // Reduce global min/max values
+    MPI_Reduce(local_global_mins, global_mins, NC, MPI_FLOAT, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(local_global_maxs, global_maxs, NC, MPI_FLOAT, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(!rank){
+        FILE* fp = fopen(outputfile, "w");
+        if(!fp){
+            fprintf(stderr, "Rank 0: Cannot open output file %s\n", outputfile);
+            MPI_Abort(MPI_COMM_WORLD, -1);
+        }
+
+        for(int t = 0; t < NC; t++){
+            fprintf(fp, "(%d, %d)", global_min_counts[t], global_max_counts[t]);
+            if(t < NC - 1)
+                fprintf(fp, ", ");
+        }
+        fprintf(fp, "\n");
+
+        for(int t = 0; t < NC; t++){
+            fprintf(fp, "(%f, %f)", global_mins[t], global_maxs[t]);
+            if(t < NC - 1)
+                fprintf(fp, ", ");
+        }
+        fprintf(fp, "\n");
+
+        // fprintf(fp, "%f, %f, %f\n", read_time, main_time, total_time);
+        fclose(fp);
+
+        free(global_min_counts);
+        free(global_max_counts);
+        free(global_mins);
+        free(global_maxs);
+    }
 
     free(local_data);
+    free(local_min_counts);
+    free(local_max_counts);
+    free(local_global_mins);
+    free(local_global_maxs);
+
     MPI_Finalize();
     return 0;
 }
