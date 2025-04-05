@@ -10,9 +10,10 @@
 #include <string.h>
 #include <float.h>
 #include <mpi.h>
+#include <math.h>
 
 int PX, PY, PZ, NX, NY, NZ, NC;
-
+FILE *fp = NULL;
 // DATA: Convert linear index to 3D coordinates
 void linearToCoord(int linearIndex, int *x, int *y, int *z) {
     *z = linearIndex / (NX * NY);
@@ -78,7 +79,7 @@ void rankToProcessCoord(int rank, int *process_x, int *process_y, int *process_z
 
 int CoordToRankProcess(int x, int y, int z) {
     if(x < 0 || x >= PX || y < 0 || y >= PY || z < 0 || z >= PZ)
-        return MPI_PROC_NULL;
+        return -1;
     return x + y * PX + z * PX * PY;
 }
 
@@ -97,27 +98,15 @@ int localIndex(int x, int y, int z, int t, int lnx, int lny, int lnz) {
 // Function to determine if a point is a local minimum
 // Returns 1 if it's a local minimum, 0 otherwise
 int isLocalMinimum(float* local_data, int x, int y, int z, int t, int lnx, int lny, int lnz) {
-    
-    // for (int dz = -1; dz <= 1; dz++) {
-    //         for (int dy = -1; dy <= 1; dy++) {
-    //                 for (int dx = -1; dx <= 1; dx++) {
-    //                         if (dx == 0 && dy == 0 && dz == 0) continue; // Skip the point itself
-                
-    //                         if (value > local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)]) {
-    //                                 return 0; // Not a minimum
-    //                             }
-    //                         }
-    //                     }
-    //                 }
 
     // Check all 6 neighbors
     float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
     int offsets[6][3] = {
-        {1, 0, 0},
+        {+1, 0, 0},
         {-1, 0, 0},
-        {0, 1, 0},
+        {0, +1, 0},
         {0, -1, 0},
-        {0, 0, 1},
+        {0, 0, +1},
         {0, 0, -1}
     };
 
@@ -126,10 +115,9 @@ int isLocalMinimum(float* local_data, int x, int y, int z, int t, int lnx, int l
         int dy = offsets[o][1];
         int dz = offsets[o][2];
         float n_value = local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)];
-        if(n_value == FLT_MAX) continue; // Skip ghost cells
-        if(value > n_value) return 0; // Not a minimum
+        if(fabs(n_value - FLT_MAX) < FLT_EPSILON) continue; // Skip ghost cells
+        if(value >= n_value) return 0; // Not a minimum
     }
-
     
     return 1; // It's a local minimum
 }
@@ -137,18 +125,6 @@ int isLocalMinimum(float* local_data, int x, int y, int z, int t, int lnx, int l
 // Similarly for local maximum
 int isLocalMaximum(float* local_data, int x, int y, int z, int t, int lnx, int lny, int lnz) {
     
-    // for (int dz = -1; dz <= 1; dz++) {
-    //     for (int dy = -1; dy <= 1; dy++) {
-    //         for (int dx = -1; dx <= 1; dx++) {
-    //             if (dx == 0 && dy == 0 && dz == 0) continue;
-                
-    //             if (value < local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)]) {
-    //                 return 0; // Not a maximum
-    //             }
-    //         }
-    //     }
-    // }
-    
     float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
     int offsets[6][3] = {
         {1, 0, 0},
@@ -164,8 +140,8 @@ int isLocalMaximum(float* local_data, int x, int y, int z, int t, int lnx, int l
         int dy = offsets[o][1];
         int dz = offsets[o][2];
         float n_value = local_data[localIndex(x+dx, y+dy, z+dz, t, lnx, lny, lnz)];
-        if(n_value == FLT_MAX) continue; // Skip ghost cells
-        if(value < n_value) return 0; // Not a maximum
+        if(fabs(n_value - FLT_MAX) < FLT_EPSILON) continue; // Skip ghost cells
+        if(value <= n_value) return 0; // Not a maximum
     }
 
     return 1; // It's a local maximum
@@ -180,7 +156,10 @@ void findLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
     *max_count = 0;
     *global_min = FLT_MAX;
     *global_max = -FLT_MAX;
-
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int proc_x, proc_y, proc_z;
+    rankToProcessCoord(rank, &proc_x, &proc_y, &proc_z);
     for (int z = 1; z <= local_nz ; z++){
         for (int y = 1; y <= local_ny ; y++){
             for (int x = 1; x <= local_nx; x++){
@@ -194,10 +173,33 @@ void findLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
                 // Check for local extrema
                 if (isLocalMinimum(local_data, x, y, z, t, lnx, lny, lnz)){
                     (*min_count)++;
+                    int x_, y_, z_;
+                    x_ = proc_x * local_nx + x;
+                    y_ = proc_y * local_ny + y;
+                    z_ = proc_z * local_nz + z;
+                    //get the neighbouring values
+                    float n1 = local_data[localIndex(x+1, y, z, t, lnx, lny, lnz)];
+                    float n2 = local_data[localIndex(x-1, y, z, t, lnx, lny, lnz)];
+                    float n3 = local_data[localIndex(x, y+1, z, t, lnx, lny, lnz)];
+                    float n4 = local_data[localIndex(x, y-1, z, t, lnx, lny, lnz)];
+                    float n5 = local_data[localIndex(x, y, z+1, t, lnx, lny, lnz)];
+                    float n6 = local_data[localIndex(x, y, z-1, t, lnx, lny, lnz)];
+                    fprintf(fp, "Local minimum (%d, %d, %d, %d) with value %.6f with neigbouring values being %f, %f, %f, %f, %f, %f\n", x_, y_, z_,t, value,n1,n2,n3,n4,n5,n6);
                 }
 
                 if (isLocalMaximum(local_data, x, y, z, t, lnx, lny, lnz)){
                     (*max_count)++;
+                    int x_, y_, z_;
+                    x_ = proc_x * local_nx + x;
+                    y_ = proc_y * local_ny + y;
+                    z_ = proc_z * local_nz + z;
+                    float n1 = local_data[localIndex(x+1, y, z, t, lnx, lny, lnz)];
+                    float n2 = local_data[localIndex(x-1, y, z, t, lnx, lny, lnz)];
+                    float n3 = local_data[localIndex(x, y+1, z, t, lnx, lny, lnz)];
+                    float n4 = local_data[localIndex(x, y-1, z, t, lnx, lny, lnz)];
+                    float n5 = local_data[localIndex(x, y, z+1, t, lnx, lny, lnz)];
+                    float n6 = local_data[localIndex(x, y, z-1, t, lnx, lny, lnz)];
+                    fprintf(fp, "Local maximum (%d, %d, %d, %d) with value %.6f with neigbouring values being %f, %f, %f, %f, %f, %f\n", x_, y_, z_,t, value, n1, n2, n3, n4, n5, n6);
                 }
             }
         }
@@ -407,6 +409,7 @@ int main(int argc, char* argv[]){
             }
         }
     }
+
     free(temp_data);
     /*============================= WE HAVE GOT THE DATA! =========================================*/
     /* Compute and Communicate for all the time steps */
@@ -416,31 +419,25 @@ int main(int argc, char* argv[]){
     float local_min = FLT_MAX;
     float local_max = -FLT_MAX;
 
-    // // For x-slice (y-z plane)
-    // MPI_Datatype x_line;
-    // MPI_Type_vector(local_ny, 1, lnx, MPI_FLOAT, &x_line);
-    // MPI_Type_commit(&x_line);
-
-    // MPI_Datatype x_slice;
-    // MPI_Type_create_hvector(local_nz, 1, lnx * lny * sizeof(float), x_line, &x_slice);
-    // MPI_Type_commit(&x_slice);
-    // MPI_Type_free(&x_line);
-
-    // // For y-slice (x-z plane)
-    // MPI_Datatype y_slice;
-    // MPI_Type_vector(local_nz, local_nx, lnx * lny, MPI_FLOAT, &y_slice);
-    // MPI_Type_commit(&y_slice);
-
-    // MPI_Datatype z_slice;
-    // // For z-slice: each process sends/receives data along the XY plane
-    // MPI_Type_vector(local_ny, local_nx, lnx, MPI_FLOAT, &z_slice);
-    // MPI_Type_commit(&z_slice);
-
-
-    //DEFINE THE MPI DATATYPES
 
     MPI_Datatype x_slice, y_slice, z_slice;
-    MPI_Type_vector(local_ny * local_nz, 1, lnx, MPI_FLOAT, &x_slice);
+    MPI_Datatype y_line;
+    MPI_Type_vector(local_ny,   // count
+                    1,          // blocklength
+                    lnx,        // stride between y's
+                    MPI_FLOAT,
+                    &y_line);
+    MPI_Type_commit(&y_line);
+
+    MPI_Type_create_hvector(local_nz,             // count of blocks (z)
+                       1,                    // each block is one y_line
+                       lnx*lny*sizeof(float), // stride to next z-plane in bytes
+                       y_line,
+                       &x_slice);
+    MPI_Type_free(&y_line);
+
+
+
     MPI_Type_vector(local_nz, local_nx, lnx * lny, MPI_FLOAT, &y_slice);
     MPI_Type_vector(local_ny, local_nx, lnx, MPI_FLOAT, &z_slice);
     MPI_Type_commit(&x_slice);
@@ -454,20 +451,33 @@ int main(int argc, char* argv[]){
     float *local_global_maxs = (float *)malloc(NC * sizeof(float));
 
     int neighbours[6];
+
     enum{
         RIGHT = 0,
         LEFT,
-        UP,
         DOWN,
-        FRONT,
-        BACK
+        UP,
+        BACK,
+        FRONT
     };
-    neighbours[0] = CoordToRankProcess(proc_x + 1, proc_y, proc_z);   // right
-    neighbours[1] = CoordToRankProcess(proc_x - 1, proc_y, proc_z);   // left
-    neighbours[2] = CoordToRankProcess(proc_x, proc_y + 1, proc_z);   // up
-    neighbours[3] = CoordToRankProcess(proc_x, proc_y - 1, proc_z);   //down
-    neighbours[4] = CoordToRankProcess(proc_x, proc_y, proc_z + 1);   // front
-    neighbours[5] = CoordToRankProcess(proc_x, proc_y, proc_z - 1);   // back
+
+    neighbours[RIGHT] = CoordToRankProcess(proc_x + 1, proc_y, proc_z) ;   // right
+    neighbours[LEFT] = CoordToRankProcess(proc_x - 1, proc_y, proc_z);   // left
+    neighbours[DOWN] = CoordToRankProcess(proc_x, proc_y + 1, proc_z);   //down
+    neighbours[UP] = CoordToRankProcess(proc_x, proc_y - 1, proc_z);   // up
+    neighbours[BACK] = CoordToRankProcess(proc_x, proc_y, proc_z + 1);   // back
+    neighbours[FRONT] = CoordToRankProcess(proc_x, proc_y, proc_z - 1);   // front
+
+    // open a file for each rank to write the local extrema
+ 
+    // if not present create it  
+    char filename[100];
+    sprintf(filename, "rank_%d.txt", rank);
+    fp = fopen(filename, "w");
+    if(fp == NULL){
+        fprintf(stderr, "Rank %d: Cannot open output file %s\n", rank, filename);
+        MPI_Abort(MPI_COMM_WORLD, -1);
+    }
 
     for(int t = 0; t < NC; t++){
 
@@ -477,54 +487,42 @@ int main(int argc, char* argv[]){
 
         // X direction exchange
         // Send right edge, receive left ghost
-        MPI_Isend(&local_data[localIndex(local_nx, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[RIGHT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(0, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[LEFT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[RIGHT] != -1)
+            MPI_Isend(&local_data[localIndex(local_nx, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[RIGHT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[LEFT] != -1)
+            MPI_Irecv(&local_data[localIndex(0, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[LEFT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
 
         // Send left edge, receive right ghost
-        MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[LEFT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(local_nx + 1, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[RIGHT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        // // X-direction exchange (left-right)
-        // MPI_Isend(&local_data[localIndex(local_nx - 1, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[1], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(-1, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[0], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-
-        // MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[0], 1, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(local_nx, 0, 0, t, lnx, lny, lnz)], 1, x_slice, neighbours[1], 1, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[LEFT] != -1)
+            MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[LEFT], 1, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[RIGHT] != -1)
+            MPI_Irecv(&local_data[localIndex(local_nx + 1, 1, 1, t, lnx, lny, lnz)], 1, x_slice, neighbours[RIGHT], 1, MPI_COMM_WORLD, &requests[req_idx++]);
 
         // Y-direction exchange (down-up)
         // Send down edge, receive up ghost
-        MPI_Isend(&local_data[localIndex(1, local_ny, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[DOWN], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(1, 0, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[UP], 0, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[DOWN] != -1)
+            MPI_Isend(&local_data[localIndex(1, local_ny, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[DOWN], 2, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[UP] != -1)
+            MPI_Irecv(&local_data[localIndex(1, 0, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[UP], 2, MPI_COMM_WORLD, &requests[req_idx++]);
 
         // Send up edge, receive down ghost
-        MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[UP], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(1, local_ny + 1, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[DOWN], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-
-        // // Y-direction exchange (down-up)
-        // // Send up edge, receive down ghost
-        // MPI_Isend(&local_data[localIndex(0, local_ny-1, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[3], 2, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(0, -1, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[2], 2, MPI_COMM_WORLD, &requests[req_idx++]);
-    
-        // // Send down edge, receive up ghost
-        // MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[2], 3, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(0, local_ny, 0, t, lnx, lny, lnz)], 1, y_slice, neighbours[3], 3, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[UP] != -1)
+            MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[UP], 3, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[DOWN] != -1)
+            MPI_Irecv(&local_data[localIndex(1, local_ny + 1, 1, t, lnx, lny, lnz)], 1, y_slice, neighbours[DOWN], 3, MPI_COMM_WORLD, &requests[req_idx++]);
 
         // Z-direction exchange (back-front)
-        // Send front edge, receive back ghost
-        MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[FRONT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(1, 1, local_nz + 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[BACK], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-
         // Send back edge, receive front ghost
-        MPI_Isend(&local_data[localIndex(1, 1, local_nz, t, lnx, lny, lnz)], 1, z_slice, neighbours[BACK], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        MPI_Irecv(&local_data[localIndex(1, 1, 0, t, lnx, lny, lnz)], 1, z_slice, neighbours[FRONT], 0, MPI_COMM_WORLD, &requests[req_idx++]);
-        // // Z-direction exchange (back-front)
-        // // Send front edge, receive back ghost
-        // // Send back edge, receive front ghost
-        // MPI_Isend(&local_data[localIndex(0, 0, local_nz-1, t, lnx, lny, lnz)], 1, z_slice, neighbours[5], 4, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(0, 0, -1, t, lnx, lny, lnz)], 1, z_slice, neighbours[4], 4, MPI_COMM_WORLD, &requests[req_idx++]);
-    
-        // // Send back edge, receive front ghost
-        // MPI_Isend(&local_data[localIndex(0, 0, 0, t, lnx, lny, lnz)], 1, z_slice, neighbours[4], 5, MPI_COMM_WORLD, &requests[req_idx++]);
-        // MPI_Irecv(&local_data[localIndex(0, 0, local_nz, t, lnx, lny, lnz)], 1, z_slice, neighbours[5], 5, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[BACK] != -1)
+            MPI_Isend(&local_data[localIndex(1, 1, local_nz, t, lnx, lny, lnz)], 1, z_slice, neighbours[BACK], 4, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[FRONT] != -1)
+            MPI_Irecv(&local_data[localIndex(1, 1, 0, t, lnx, lny, lnz)], 1, z_slice, neighbours[FRONT], 4, MPI_COMM_WORLD, &requests[req_idx++]);
+        
+        // Send front edge, receive back ghost
+        if(neighbours[FRONT] != -1)
+            MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[FRONT], 5, MPI_COMM_WORLD, &requests[req_idx++]);
+        if(neighbours[BACK] != -1)
+            MPI_Irecv(&local_data[localIndex(1, 1, local_nz + 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[BACK], 5, MPI_COMM_WORLD, &requests[req_idx++]);
 
         //overlap the communication and computation
         
@@ -538,10 +536,8 @@ int main(int argc, char* argv[]){
         //     &local_min_counts[t], &local_max_counts[t], 
         //     &local_global_mins[t], &local_global_maxs[t]);
 
-
         MPI_Waitall(req_idx, requests, statuses);
         findLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz,  &local_min_counts[t], &local_max_counts[t], &local_global_mins[t], &local_global_maxs[t]);
-
     }
 
     int *global_min_counts = NULL;
@@ -603,6 +599,7 @@ int main(int argc, char* argv[]){
     MPI_Type_free(&x_slice);
     MPI_Type_free(&y_slice);
     MPI_Type_free(&z_slice);
+    fclose(fp);
     MPI_Finalize();
     return 0;
 }
