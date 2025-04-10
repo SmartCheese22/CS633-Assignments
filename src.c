@@ -272,7 +272,8 @@ void set_local_data(float* local_data, float* temp_data, int local_nx, int local
 }
 
 void write_to_file(char* outputfile, int* global_min_counts, int* global_max_counts,
-                   float* global_mins, float* global_maxs){
+                   float* global_mins, float* global_maxs, double max_read_time,
+                   double max_main_time, double max_total_time){
     FILE* fp = fopen(outputfile, "w");
     if(!fp){
         fprintf(stderr, "Rank 0: Cannot open output file %s\n", outputfile);
@@ -292,11 +293,12 @@ void write_to_file(char* outputfile, int* global_min_counts, int* global_max_cou
             fprintf(fp, ", ");
     }
     fprintf(fp, "\n");
+    fprintf(fp, "%f, %f, %f\n", max_read_time, max_main_time, max_total_time);
     fclose(fp);
 }
 
 int main(int argc, char* argv[]){
-    double time1, time2, time3, time4;
+    double time1, time2, time3;
     double read_time, main_time, total_time;
     double max_read_time, max_main_time, max_total_time;
     MPI_Init(&argc, &argv);
@@ -470,29 +472,20 @@ int main(int argc, char* argv[]){
 
     time3 = MPI_Wtime();
     main_time = time3 - time2;
-    if(!rank){
-        write_to_file(outputfile, global_min_counts, global_max_counts, global_mins, global_maxs);
-
-        free(global_min_counts);
-        free(global_max_counts);
-        free(global_mins);
-        free(global_maxs);
-    }
-    time4 = MPI_Wtime();
-    total_time = time4 - time1;
+    total_time = time3 - time1;
 
     // Find maximum time across all processes
     MPI_Reduce(&read_time, &max_read_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Reduce(&main_time, &max_main_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Reduce(&total_time, &max_total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    
-    // Write timing information to output file
-    if(!rank) {
-        FILE* fp = fopen(outputfile, "a");  // Append to the existing output file
-        if(fp) {
-            fprintf(fp, "%f, %f, %f\n", max_read_time, max_main_time, max_total_time);
-            fclose(fp);
-        }
+
+    if(!rank){
+        write_to_file(outputfile, global_min_counts, global_max_counts, global_mins, global_maxs, max_read_time, max_main_time, max_total_time);
+
+        free(global_min_counts);
+        free(global_max_counts);
+        free(global_mins);
+        free(global_maxs);
     }
 
     free(local_data);
