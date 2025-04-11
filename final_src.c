@@ -224,11 +224,11 @@ void findLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
     *max_count = 0;
     *global_min = FLT_MAX;
     *global_max = -FLT_MAX;
-    for (int z = 1; z <= local_nz; z++)
+    for (int z = 2; z <= local_nz - 1; z++)
     {
-        for (int y = 1; y <= local_ny; y++)
+        for (int y = 2; y <= local_ny - 1; y++)
         {
-            for (int x = 1; x <= local_nx; x++)
+            for (int x = 2; x <= local_nx - 1; x++)
             {
                 float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
                 // Update global extrema
@@ -249,6 +249,238 @@ void findLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
                 }
             }
         }
+    }
+}
+
+void UpdateLocalExtrema(float *local_data, int t, int lnx, int lny, int lnz,
+                       int local_nx, int local_ny, int local_nz,
+                       int *min_count, int *max_count, float *global_min, float *global_max)
+{
+    // Process x-direction borders (x=1 and x=local_nx)
+    for (int z = 2; z <= local_nz - 1; z++) {
+        for (int y = 2; y <= local_ny - 1; y++) {
+            // x = 1 border
+            float value = local_data[localIndex(1, y, z, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, 1, y, z, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, 1, y, z, t, lnx, lny, lnz))
+                (*max_count)++;
+
+            // x = local_nx border
+            value = local_data[localIndex(local_nx, y, z, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, local_nx, y, z, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, local_nx, y, z, t, lnx, lny, lnz))
+                (*max_count)++;
+        }
+    }
+
+    // Process y-direction borders (y=1 and y=local_ny)
+    for (int z = 2; z <= local_nz - 1; z++) {
+        for (int x = 2; x <= local_nx - 1; x++) {
+            // y = 1 border
+            float value = local_data[localIndex(x, 1, z, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, x, 1, z, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, x, 1, z, t, lnx, lny, lnz))
+                (*max_count)++;
+
+            // y = local_ny border
+            value = local_data[localIndex(x, local_ny, z, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, x, local_ny, z, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, x, local_ny, z, t, lnx, lny, lnz))
+                (*max_count)++;
+        }
+    }
+
+    // Process z-direction borders (z=1 and z=local_nz)
+    for (int y = 2; y <= local_ny - 1; y++) {
+        for (int x = 2; x <= local_nx - 1; x++) {
+            // z = 1 border
+            float value = local_data[localIndex(x, y, 1, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, x, y, 1, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, x, y, 1, t, lnx, lny, lnz))
+                (*max_count)++;
+
+            // z = local_nz border
+            value = local_data[localIndex(x, y, local_nz, t, lnx, lny, lnz)];
+            // Update global extrema
+            if (value < *global_min)
+                *global_min = value;
+            if (value > *global_max)
+                *global_max = value;
+
+            // Check for local extrema
+            if (isLocalMinimum(local_data, x, y, local_nz, t, lnx, lny, lnz))
+                (*min_count)++;
+            if (isLocalMaximum(local_data, x, y, local_nz, t, lnx, lny, lnz))
+                (*max_count)++;
+        }
+    }
+
+    // Process the 12 edges (lines along pairs of dimensions)
+    // x=1, y=1, all z
+    for (int z = 2; z <= local_nz - 1; z++) {
+        float value = local_data[localIndex(1, 1, z, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, 1, 1, z, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, 1, 1, z, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=local_nx, y=1, all z
+    for (int z = 2; z <= local_nz - 1; z++) {
+        float value = local_data[localIndex(local_nx, 1, z, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, local_nx, 1, z, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, local_nx, 1, z, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=1, y=local_ny, all z
+    for (int z = 2; z <= local_nz - 1; z++) {
+        float value = local_data[localIndex(1, local_ny, z, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, 1, local_ny, z, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, 1, local_ny, z, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=local_nx, y=local_ny, all z
+    for (int z = 2; z <= local_nz - 1; z++) {
+        float value = local_data[localIndex(local_nx, local_ny, z, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, local_nx, local_ny, z, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, local_nx, local_ny, z, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=1, z=1, all y
+    for (int y = 2; y <= local_ny - 1; y++) {
+        float value = local_data[localIndex(1, y, 1, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, 1, y, 1, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, 1, y, 1, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=local_nx, z=1, all y
+    for (int y = 2; y <= local_ny - 1; y++) {
+        float value = local_data[localIndex(local_nx, y, 1, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, local_nx, y, 1, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, local_nx, y, 1, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=1, z=local_nz, all y
+    for (int y = 2; y <= local_ny - 1; y++) {
+        float value = local_data[localIndex(1, y, local_nz, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, 1, y, local_nz, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, 1, y, local_nz, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // x=local_nx, z=local_nz, all y
+    for (int y = 2; y <= local_ny - 1; y++) {
+        float value = local_data[localIndex(local_nx, y, local_nz, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, local_nx, y, local_nz, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, local_nx, y, local_nz, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // y=1, z=1, all x
+    for (int x = 2; x <= local_nx - 1; x++) {
+        float value = local_data[localIndex(x, 1, 1, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, x, 1, 1, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, x, 1, 1, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // y=local_ny, z=1, all x
+    for (int x = 2; x <= local_nx - 1; x++) {
+        float value = local_data[localIndex(x, local_ny, 1, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, x, local_ny, 1, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, x, local_ny, 1, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // y=1, z=local_nz, all x
+    for (int x = 2; x <= local_nx - 1; x++) {
+        float value = local_data[localIndex(x, 1, local_nz, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, x, 1, local_nz, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, x, 1, local_nz, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // y=local_ny, z=local_nz, all x
+    for (int x = 2; x <= local_nx - 1; x++) {
+        float value = local_data[localIndex(x, local_ny, local_nz, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        if (isLocalMinimum(local_data, x, local_ny, local_nz, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, x, local_ny, local_nz, t, lnx, lny, lnz)) (*max_count)++;
+    }
+
+    // Process the 8 corners
+    int corners[8][3] = {
+        {1, 1, 1}, {local_nx, 1, 1}, {1, local_ny, 1}, {local_nx, local_ny, 1},
+        {1, 1, local_nz}, {local_nx, 1, local_nz}, {1, local_ny, local_nz}, {local_nx, local_ny, local_nz}
+    };
+
+    for (int i = 0; i < 8; i++) {
+        int x = corners[i][0];
+        int y = corners[i][1];
+        int z = corners[i][2];
+        
+        float value = local_data[localIndex(x, y, z, t, lnx, lny, lnz)];
+        if (value < *global_min) *global_min = value;
+        if (value > *global_max) *global_max = value;
+        
+        if (isLocalMinimum(local_data, x, y, z, t, lnx, lny, lnz)) (*min_count)++;
+        if (isLocalMaximum(local_data, x, y, z, t, lnx, lny, lnz)) (*max_count)++;
     }
 }
 
@@ -337,11 +569,6 @@ void read_parallel(float *local_data, float* init_data, char *datafile) {
     MPI_Request io_request;
     MPI_Status io_status;
 
-    MPI_Info info;
-    MPI_Info_create(&info);
-    MPI_Info_set(info, "cb_buffer_size", "8388608");
-    MPI_Info_set(info, "romio_cb_read", "enable");
-
     MPI_File_open(MPI_COMM_WORLD, datafile, MPI_MODE_RDONLY, MPI_INFO_NULL, &fh);
     MPI_File_set_view(fh, 0, MPI_FLOAT, filetype, "native", MPI_INFO_NULL);
     
@@ -357,7 +584,6 @@ void read_parallel(float *local_data, float* init_data, char *datafile) {
     // end of usefull work
     MPI_Wait(&io_request, &io_status);
     MPI_File_close(&fh);
-    MPI_Info_free(&info);
 }
 
 void init_all(float* init_data){
@@ -547,17 +773,17 @@ int main(int argc, char *argv[])
         MPI_Request r;
         MPI_Iscatterv(global_data, sendcounts, displs, MPI_FLOAT, temp_data, local_data_size, MPI_FLOAT, 0, MPI_COMM_WORLD, &r);
         init_all(local_data);
-        MPI_Wait(r, MPI_STATUS_IGNORE);
-        printf("USED SEQ IO\n");
+        MPI_Wait(&r, MPI_STATUS_IGNORE);
+        // printf("USED SERIAL I/O\n");
         if (!rank)
         {
             free(sendcounts);
             free(displs);
             free(global_data);
-            printf("USED PARALLEL IO\n");
         }
 
     } else {
+        // printf("USED PARALLEL I/O\n");
         read_parallel(temp_data, local_data, datafile);
     }
 
@@ -604,9 +830,11 @@ int main(int argc, char *argv[])
         MPI_Isend(&local_data[localIndex(1, 1, 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[FRONT], 5, MPI_COMM_WORLD, &requests[req_idx++]);
         MPI_Irecv(&local_data[localIndex(1, 1, local_nz + 1, t, lnx, lny, lnz)], 1, z_slice, neighbours[BACK], 5, MPI_COMM_WORLD, &requests[req_idx++]);
 
+        findLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz, &local_min_counts[t], &local_max_counts[t], &local_global_mins[t], &local_global_maxs[t]);
 
         MPI_Waitall(req_idx, requests, statuses);
-        findLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz, &local_min_counts[t], &local_max_counts[t], &local_global_mins[t], &local_global_maxs[t]);
+
+        UpdateLocalExtrema(local_data, t, lnx, lny, lnz, local_nx, local_ny, local_nz, &local_min_counts[t], &local_max_counts[t], &local_global_mins[t], &local_global_maxs[t]);
     }
 
     int *global_min_counts = NULL;
