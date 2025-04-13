@@ -784,11 +784,8 @@ void init_all(float *init_data)
     local_global_mins = (float *)malloc(NC * sizeof(float));
     local_global_maxs = (float *)malloc(NC * sizeof(float));
 
-    if (local_nx == 1 || local_ny == 1 || local_nz == 1)
-    {
-        single_loop = 1;
-    }
-    MPI_Allreduce(&single_loop, &single_loop, 1, MPI_INT, MPI_MAX, comm);
+    int lsingle_loop = (local_nx == 1 || local_ny == 1 || local_nz == 1);
+    MPI_Allreduce(&lsingle_loop, &single_loop, 1, MPI_INT, MPI_MAX, comm);
 }
 
 // set the local data, considering the ghost cells
