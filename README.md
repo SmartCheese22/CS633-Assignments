@@ -5,7 +5,6 @@ This repository contains assignments and projects completed for the CS633 (Paral
 ## 📋 Table of Contents
 
 - [Overview](#overview)
-- [Project Description](#project-description)
 - [Repository Structure](#repository-structure)
 - [Dependencies](#dependencies)
 - [Compilation](#compilation)
