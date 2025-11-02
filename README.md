@@ -13,6 +13,10 @@ This repository contains assignments and projects completed for the CS633 (Paral
 - [Results](#results)
 - [License](#license)
 - [Author](#author)
+- [Course Information](#course-information)
+- [Contributing](#contributing)
+- [References](#references)
+- [Notes](#notes)
 
 ## 🎯 Overview
 
@@ -240,6 +244,7 @@ This is an academic assignment repository. While contributions are not expected,
 - For optimal performance on specific architectures, consider tuning compilation flags
 - Large-scale runs require sufficient memory per process for local data and ghost cells
 - The implementation assumes a 6-connected neighborhood (face neighbors only)
+- Note: The filename `optmised_src.c` contains a spelling variation that matches the actual file in the repository
 
 ---
 
