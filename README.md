@@ -2,7 +2,7 @@
 
 This repository contains assignments and projects completed for the CS633 (Parallel Computing) course, 2024-25. The primary focus is on implementing and optimizing parallel algorithms using MPI (Message Passing Interface) for solving computational problems on distributed systems.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Repository Structure](#repository-structure)
@@ -18,7 +18,7 @@ This repository contains assignments and projects completed for the CS633 (Paral
 - [References](#references)
 - [Notes](#notes)
 
-## 🎯 Overview
+## Overview
 
 The main project implements a parallel algorithm to find local and global extrema (minima and maxima) in large-scale 3D grid datasets. The implementation uses MPI for distributed memory parallelism, enabling efficient computation across multiple processes with 3D domain decomposition.
 
@@ -30,7 +30,7 @@ The main project implements a parallel algorithm to find local and global extrem
 - **Performance Benchmarking**: Comprehensive scaling analysis and performance metrics
 - **Time-series Support**: Handles multiple time steps in a single execution
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 CS633-Assignments/
@@ -56,7 +56,7 @@ CS633-Assignments/
 └── strong_scaling_plot.png               # Strong scaling plot
 ```
 
-## 🔧 Dependencies
+## Dependencies
 
 ### Required
 - **MPI Implementation**: OpenMPI (3.0+) or MPICH (3.2+)
@@ -67,7 +67,7 @@ CS633-Assignments/
 - Python 3.x with matplotlib (for generating plots)
 - Pandas (for data analysis)
 
-## 🛠 Compilation
+## Compilation
 
 ### Basic Compilation
 ```bash
@@ -92,7 +92,7 @@ mpicc -o final_src.x final_src.c -O3 -lm
   mpicc -o src.x src.c -O3 -march=native -mtune=native -lm
   ```
 
-## 🚀 Usage
+## Usage
 
 ### Basic Execution
 ```bash
@@ -142,7 +142,7 @@ Example output:
 0.125000, 0.875000, 1.000000
 ```
 
-## 📊 Performance Analysis
+## Performance Analysis
 
 ### Strong Scaling Results
 
@@ -179,7 +179,7 @@ Performance plots are available in the repository:
 - `data_64_64_64_3_scaling_boxplot.png`: Scaling for smaller dataset
 - `data_64_64_96_7_scaling_boxplot.png`: Scaling for larger dataset
 
-## 📈 Results
+## Results
 
 ### Algorithm Correctness
 
@@ -196,7 +196,7 @@ The implementation correctly identifies:
 4. **MPI Derived Datatypes**: Efficient slice/plane exchange without packing
 5. **Uneven Distribution Handling**: Supports grids not evenly divisible by process counts
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
@@ -216,37 +216,3 @@ The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 ```
 
-## 👤 Author
-
-**Prathamesh Baviskar**
-- GitHub: [@SmartCheese22](https://github.com/SmartCheese22)
-- Course: CS633 - Parallel Computing (2024-25)
-
-## 🎓 Course Information
-
-**Course**: CS633 - Parallel Computing  
-**Academic Year**: 2024-25  
-**Institution**: IIT Bombay
-
-## 🤝 Contributing
-
-This is an academic assignment repository. While contributions are not expected, suggestions and discussions about the implementation are welcome through issues.
-
-## 📚 References
-
-- MPI Standard Documentation: https://www.mpi-forum.org/
-- OpenMPI Documentation: https://www.open-mpi.org/doc/
-- Parallel Programming Course Materials (CS633)
-
-## 📝 Notes
-
-- Performance results may vary based on hardware, network topology, and MPI implementation
-- For optimal performance on specific architectures, consider tuning compilation flags
-- Large-scale runs require sufficient memory per process for local data and ghost cells
-- The implementation assumes a 6-connected neighborhood (face neighbors only)
-- Note: The filename `optmised_src.c` contains a spelling variation that matches the actual file in the repository
-
----
-
-**Last Updated**: November 2025  
-**Status**: Assignment Complete ✅
